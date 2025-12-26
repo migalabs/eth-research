@@ -122,6 +122,18 @@ def _decode_eth2_forkid(v: bytes) -> Dict[str, Any]:
         "next_fork_epoch": next_fork_epoch,
     }
 
+def classify_enr(kv: Dict[str, bytes]) -> str:
+    has_cl = "eth2" in kv or "attnets" in kv or "syncnets" in kv or "cgc" in kv or "nfd" in kv
+    has_el = "eth" in kv or "snap" in kv or "les" in kv  # not exhaustive, but common
+
+    if has_cl and has_el:
+        return "cl+el (mixed ENR)"
+    if has_cl:
+        return "consensus-layer (CL)"
+    if has_el:
+        return "execution-layer (EL)"
+    return "unknown/transport-only"
+
 def decode_enr(enr: str) -> Dict[str, Any]:
     """
     Decode an ENR string (enr:<base64url> or enr:-<base64url>) into a dict.
@@ -148,16 +160,23 @@ def decode_enr(enr: str) -> Dict[str, Any]:
     for i in range(2, len(rlp), 2):
         k_raw = rlp[i]
         v_raw = rlp[i + 1]
-        if not isinstance(k_raw, (bytes, bytearray)) or not isinstance(v_raw, (bytes, bytearray)):
-            raise ValueError("ENR keys/values must be bytes")
+        if not isinstance(k_raw, (bytes, bytearray)):
+            raise ValueError("ENR keys must be bytes")
         key = k_raw.decode("utf-8", errors="strict")
-        kv[key] = bytes(v_raw)
+        # Some ENR values (like 'snap') may be empty lists instead of empty bytes
+        if isinstance(v_raw, list) and len(v_raw) == 0:
+            kv[key] = b""
+        elif isinstance(v_raw, (bytes, bytearray)):
+            kv[key] = bytes(v_raw)
+        else:
+            # Store complex structures (non-empty lists) as-is for now
+            kv[key] = v_raw
 
     # Friendly decoded view
     out: Dict[str, Any] = {
         "seq": seq,
         "signature": _hex0x(signature if isinstance(signature, (bytes, bytearray)) else b""),
-        "raw_kv": {k: _hex0x(v) for k, v in kv.items()},
+        "raw_kv": {k: _hex0x(v) if isinstance(v, (bytes, bytearray)) else v for k, v in kv.items()},
     }
 
     # Common field decoding
@@ -189,13 +208,18 @@ def decode_enr(enr: str) -> Dict[str, Any]:
     for k, v in kv.items():
         if k in {"id","ip","ip6","udp","tcp","quic","udp6","tcp6","quic6","secp256k1","eth2","nfd","attnets","syncnets","cgc"}:
             continue
-        extras[k] = {
-            "hex": _hex0x(v),
-            "utf8": _try_utf8(v) if isinstance(_try_utf8(v), str) else None,
-            "int": _bytes_to_int(v) if len(v) <= 8 else None,
-        }
+        if isinstance(v, (bytes, bytearray)):
+            extras[k] = {
+                "hex": _hex0x(v),
+                "utf8": _try_utf8(v) if isinstance(_try_utf8(v), str) else None,
+                "int": _bytes_to_int(v) if len(v) <= 8 else None,
+            }
+        else:
+            extras[k] = {"value": v}
     if extras:
         out["extras"] = extras
+
+    out["role_guess"] = classify_enr(kv)
 
     return out
 
@@ -208,4 +232,11 @@ if __name__ == "__main__":
     decoded = decode_enr(enr_str)
     from pprint import pprint
     pprint(decoded)
+
+    enr_str = "enr:-J24QG3pjTFObcDvTOTJr2qPOTDH3-YxDqS47Ylm-kgM5BUwb1oD5Id6fSRTfUzTahTa7y4TWx_HSV7wri7T6iYtyAQHg2V0aMfGhLjGKZ2AgmlkgnY0gmlwhJ1a19CJc2VjcDI1NmsxoQPlCNb7N__vcnsNC8YYkFkmNj8mibnR5NuvSowcRZsLU4RzbmFwwIN0Y3CCdl-DdWRwgnZf"
+    decoded = decode_enr(enr_str)
+    from pprint import pprint
+    pprint(decoded)
+
+
 
