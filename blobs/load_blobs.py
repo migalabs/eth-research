@@ -6,6 +6,13 @@ import matplotlib.pyplot as plt
 
 # Constants
 SLOTS_PER_DAY = 7200
+
+# Key event slots
+EVENT_SLOTS = {
+    13164544: "Fusaka",
+    13205504: "BPO #1",
+    13410304: "BPO #2",
+}
 SLOT_DURATION_SECONDS = 12
 REFERENCE_SLOT = 12704400  # First slot of October 1st, 2025 at 00:00:00 UTC
 REFERENCE_DATE = datetime(2025, 10, 1, 0, 0, 0)
@@ -108,6 +115,18 @@ def plot_blobs_per_day(days, missed_per_day, num_days=None):
     ax2.plot(positions, missed_counts, 'r-', linewidth=2, label='Missed slots')
     ax2.set_ylabel('Missed slots per day', color='red')
     ax2.tick_params(axis='y', labelcolor='red')
+
+    # Add vertical lines for key events
+    colors = ['green', 'purple', 'orange']
+    for i, (event_slot, event_name) in enumerate(EVENT_SLOTS.items()):
+        event_date = slot_to_datetime(event_slot).date()
+        if event_date in dates:
+            pos = dates.index(event_date)
+            ax1.axvline(x=pos, color=colors[i % len(colors)], linestyle='--',
+                       linewidth=2, alpha=0.8, label=event_name)
+
+    # Add legend for event lines
+    ax1.legend(loc='upper left')
 
     # Place ticks at regular intervals
     tick_interval = max(1, len(dates) // 6)  # Aim for ~6 ticks
@@ -218,6 +237,64 @@ def write_random_slots(slots, slot_ids, num_samples=100, filepath="random_slots.
     print(f"Saved {sample_size} random slots to {filepath}")
 
 
+def write_high_blob_slots(slots, slot_ids, min_blobs=16, filepath="high_blob_slots.csv"):
+    """Write slots with min_blobs or more blobs and their consecutive slot to a CSV file."""
+    high_blob_entries = []
+
+    for i, slot_id in enumerate(slot_ids):
+        if slots[slot_id]['count'] >= min_blobs:
+            # Get current slot data
+            current_data = slots[slot_id]
+            entry = {
+                'slot_id': slot_id,
+                'blob_count': current_data['count'],
+                'missed': current_data['missed'],
+                'next_slot_id': None,
+                'next_blob_count': None,
+                'next_missed': None,
+            }
+            # Get consecutive slot data if available
+            next_slot_id = slot_id + 1
+            if next_slot_id in slots:
+                next_data = slots[next_slot_id]
+                entry['next_slot_id'] = next_slot_id
+                entry['next_blob_count'] = next_data['count']
+                entry['next_missed'] = next_data['missed']
+
+            high_blob_entries.append(entry)
+
+    with open(filepath, 'w', newline='') as f:
+        writer = csv.writer(f)
+        writer.writerow(['slot_id', 'blob_count', 'missed', 'next_slot_id', 'next_blob_count', 'next_missed'])
+        for entry in high_blob_entries:
+            writer.writerow([
+                entry['slot_id'],
+                entry['blob_count'],
+                entry['missed'],
+                entry['next_slot_id'],
+                entry['next_blob_count'],
+                entry['next_missed'],
+            ])
+
+    # Group by blob count for statistics
+    stats_by_count = {}
+    for entry in high_blob_entries:
+        count = entry['blob_count']
+        if count not in stats_by_count:
+            stats_by_count[count] = {'total': 0, 'missed': 0}
+        stats_by_count[count]['total'] += 1
+        if entry['next_missed']:
+            stats_by_count[count]['missed'] += 1
+
+    print(f"Saved {len(high_blob_entries)} slots with {min_blobs}+ blobs to {filepath}")
+    print(f"  Consecutive missed slots by blob count:")
+    for count in sorted(stats_by_count.keys()):
+        total = stats_by_count[count]['total']
+        missed = stats_by_count[count]['missed']
+        ratio = (missed / total * 100) if total > 0 else 0
+        print(f"    {count} blobs: {missed}/{total} ({ratio:.2f}%)")
+
+
 if __name__ == "__main__":
     import argparse
 
@@ -228,6 +305,8 @@ if __name__ == "__main__":
                         help='Number of days for missed slots analysis (default: all days)')
     parser.add_argument('--random', '-r', type=int, default=100,
                         help='Number of random slots to export for verification (default: 100)')
+    parser.add_argument('--high-blobs', '-b', type=int, default=16,
+                        help='Minimum blob count for high blob slots export (default: 16)')
     args = parser.parse_args()
 
     # Load data
@@ -266,3 +345,6 @@ if __name__ == "__main__":
 
     # Export random slots for verification
     write_random_slots(slots, slot_ids, num_samples=args.random)
+
+    # Export high blob slots with their consecutive slots
+    write_high_blob_slots(slots, slot_ids, min_blobs=args.high_blobs)
