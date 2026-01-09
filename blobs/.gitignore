@@ -1,0 +1,10 @@
+# Data files
+data/
+
+# Generated outputs
+*.png
+random_slots.csv
+
+# Python
+__pycache__/
+*.pyc
