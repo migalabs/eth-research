@@ -6,7 +6,15 @@ import matplotlib.pyplot as plt
 
 # Constants
 SLOTS_PER_DAY = 7200
-START_DATE = datetime(2025, 10, 1)
+SLOT_DURATION_SECONDS = 12
+REFERENCE_SLOT = 12704400  # First slot of October 1st, 2025 at 00:00:00 UTC
+REFERENCE_DATE = datetime(2025, 10, 1, 0, 0, 0)
+
+
+def slot_to_datetime(slot):
+    """Convert a slot number to its corresponding datetime."""
+    slot_diff = slot - REFERENCE_SLOT
+    return REFERENCE_DATE + timedelta(seconds=slot_diff * SLOT_DURATION_SECONDS)
 
 
 def load_blobs_per_slot(filepath="data/BlobsPerSlot.csv"):
@@ -38,73 +46,75 @@ def load_missed_slots(slots, filepath="data/MissedSlots.csv"):
 
 def filter_slots_by_days(slot_ids, num_days):
     """Filter slot_ids to last num_days. Returns filtered list and date range."""
-    first_slot = slot_ids[0]
-
     if num_days is not None:
         min_slot = slot_ids[-1] - (num_days * SLOTS_PER_DAY)
         filtered_ids = [s for s in slot_ids if s >= min_slot]
     else:
         filtered_ids = slot_ids
 
-    first_day_num = (filtered_ids[0] - first_slot) // SLOTS_PER_DAY
-    last_day_num = (filtered_ids[-1] - first_slot) // SLOTS_PER_DAY
-    date_start = START_DATE + timedelta(days=first_day_num)
-    date_end = START_DATE + timedelta(days=last_day_num)
+    date_start = slot_to_datetime(filtered_ids[0])
+    date_end = slot_to_datetime(filtered_ids[-1])
 
     return filtered_ids, date_start, date_end
 
 
 def group_by_day(slots, slot_ids):
-    """Group slots into daily batches and return blob counts and missed counts per day."""
+    """Group slots into daily batches by calendar date (UTC) and return blob counts and missed counts per day."""
     if not slots:
         return {}, {}
 
-    first_slot = slot_ids[0]
     days = {}
     missed_per_day = {}
 
     for slot_id in slot_ids:
         data = slots[slot_id]
-        day_num = (slot_id - first_slot) // SLOTS_PER_DAY
-        if day_num not in days:
-            days[day_num] = []
-            missed_per_day[day_num] = 0
-        days[day_num].append(data['count'])
+        # Get actual calendar date for this slot
+        slot_datetime = slot_to_datetime(slot_id)
+        date_key = slot_datetime.date()
+        if date_key not in days:
+            days[date_key] = []
+            missed_per_day[date_key] = 0
+        days[date_key].append(data['count'])
         if data['missed']:
-            missed_per_day[day_num] += 1
+            missed_per_day[date_key] += 1
 
     return days, missed_per_day
 
 
 def plot_blobs_per_day(days, missed_per_day, num_days=None):
     """Create a box plot of blobs per day with missed slots on secondary axis."""
-    all_day_numbers = sorted(days.keys())
+    all_dates = sorted(days.keys())
 
-    if num_days is not None and num_days < len(all_day_numbers):
-        day_numbers = all_day_numbers[-num_days:]
+    if num_days is not None and num_days < len(all_dates):
+        dates = all_dates[-num_days:]
     else:
-        day_numbers = all_day_numbers
+        dates = all_dates
 
-    data = [days[d] for d in day_numbers]
-    missed_counts = [missed_per_day[d] for d in day_numbers]
+    data = [days[d] for d in dates]
+    missed_counts = [missed_per_day[d] for d in dates]
+
+    # Use integer positions for plotting
+    positions = list(range(len(dates)))
 
     fig, ax1 = plt.subplots(figsize=(14, 6))
 
-    ax1.boxplot(data, positions=day_numbers)
+    ax1.boxplot(data, positions=positions)
     ax1.set_xlabel('Date')
     ax1.set_ylabel('Blobs per slot', color='blue')
     ax1.tick_params(axis='y', labelcolor='blue')
     ax1.grid(axis='y', linestyle='--', alpha=0.7)
 
     ax2 = ax1.twinx()
-    ax2.plot(day_numbers, missed_counts, 'r-', linewidth=2, label='Missed slots')
+    ax2.plot(positions, missed_counts, 'r-', linewidth=2, label='Missed slots')
     ax2.set_ylabel('Missed slots per day', color='red')
     ax2.tick_params(axis='y', labelcolor='red')
 
-    week_ticks = [d for d in day_numbers if d % 7 == 0]
-    week_labels = [(START_DATE + timedelta(days=d)).strftime('%b %d') for d in week_ticks]
-    ax1.set_xticks(week_ticks)
-    ax1.set_xticklabels(week_labels, rotation=45)
+    # Place ticks at regular intervals
+    tick_interval = max(1, len(dates) // 6)  # Aim for ~6 ticks
+    tick_indices = list(range(0, len(dates), tick_interval))
+    tick_labels = [dates[i].strftime('%b %d') for i in tick_indices]
+    ax1.set_xticks(tick_indices)
+    ax1.set_xticklabels(tick_labels, rotation=45)
 
     ax1.set_title('Distribution of Blobs per Slot by Day')
     plt.tight_layout()
@@ -227,8 +237,11 @@ if __name__ == "__main__":
 
     print(f"Total unique slots: {len(slots)}")
 
-    # Calculate total days in data
+    # Calculate total days in data and actual date range
     total_days = (slot_ids[-1] - slot_ids[0]) // SLOTS_PER_DAY + 1
+    data_start = slot_to_datetime(slot_ids[0])
+    data_end = slot_to_datetime(slot_ids[-1])
+    print(f"Data range: {data_start.strftime('%Y-%m-%d %H:%M:%S')} to {data_end.strftime('%Y-%m-%d %H:%M:%S')}")
     print(f"Total days in data: {total_days}")
 
     # Validate parameters
