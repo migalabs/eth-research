@@ -1,4 +1,6 @@
 import csv
+import os
+import sys
 from collections import Counter
 from datetime import datetime, timedelta
 
@@ -24,7 +26,7 @@ def slot_to_datetime(slot):
     return REFERENCE_DATE + timedelta(seconds=slot_diff * SLOT_DURATION_SECONDS)
 
 
-def load_blobs_per_slot(filepath="data/BlobsPerSlot.csv"):
+def load_blobs_per_slot(filepath):
     """Load blob data and count occurrences per slot."""
     slots = {}
     with open(filepath, 'r') as f:
@@ -37,7 +39,7 @@ def load_blobs_per_slot(filepath="data/BlobsPerSlot.csv"):
     return slots
 
 
-def load_missed_slots(slots, filepath="data/MissedSlots.csv"):
+def load_missed_slots(slots, filepath):
     """Load missed slots and update the slots structure."""
     with open(filepath, 'r') as f:
         reader = csv.DictReader(f)
@@ -88,14 +90,27 @@ def group_by_day(slots, slot_ids):
     return days, missed_per_day
 
 
-def plot_blobs_per_day(days, missed_per_day, num_days=None):
-    """Create a box plot of blobs per day with missed slots on secondary axis."""
+def plot_blobs_per_day(days, missed_per_day, slot_ids, results_dir, num_days=None):
+    """Create a box plot of blobs per day with missed slots on secondary axis.
+    Returns the first and last slot used for this figure."""
     all_dates = sorted(days.keys())
 
     if num_days is not None and num_days < len(all_dates):
         dates = all_dates[-num_days:]
     else:
         dates = all_dates
+
+    # Find first and last slots for the date range used
+    first_date = dates[0]
+    last_date = dates[-1]
+    first_slot = None
+    last_slot = None
+    for slot_id in slot_ids:
+        slot_date = slot_to_datetime(slot_id).date()
+        if slot_date == first_date and first_slot is None:
+            first_slot = slot_id
+        if slot_date == last_date:
+            last_slot = slot_id
 
     data = [days[d] for d in dates]
     missed_counts = [missed_per_day[d] for d in dates]
@@ -137,12 +152,15 @@ def plot_blobs_per_day(days, missed_per_day, num_days=None):
 
     ax1.set_title('Distribution of Blobs per Slot by Day')
     plt.tight_layout()
-    plt.savefig('blobs_per_day_boxplot.png', dpi=150)
+    output_path = os.path.join(results_dir, 'blobs_per_day_boxplot.png')
+    plt.savefig(output_path, dpi=150)
     plt.close()
-    print("Saved plot to blobs_per_day_boxplot.png")
+    print(f"Saved plot to {output_path}")
+
+    return first_slot, last_slot
 
 
-def plot_blobs_before_missed(slots, slot_ids, date_start, date_end):
+def plot_blobs_before_missed(slots, slot_ids, date_start, date_end, results_dir):
     """Create a bar plot of blob counts in slots just before missed slots."""
     blobs_before_missed = []
     for slot_id in slot_ids:
@@ -167,12 +185,13 @@ def plot_blobs_before_missed(slots, slot_ids, date_start, date_end):
     ax.set_xticks(x_values)
     ax.grid(axis='y', linestyle='--', alpha=0.7)
     plt.tight_layout()
-    plt.savefig('blobs_before_missed.png', dpi=150)
+    output_path = os.path.join(results_dir, 'blobs_before_missed.png')
+    plt.savefig(output_path, dpi=150)
     plt.close()
-    print("Saved plot to blobs_before_missed.png")
+    print(f"Saved plot to {output_path}")
 
 
-def plot_blob_distribution(slots, slot_ids, date_start, date_end):
+def plot_blob_distribution(slots, slot_ids, date_start, date_end, results_dir):
     """Create a bar plot showing distribution of blob counts across all slots."""
     blob_counts = [slots[s]['count'] for s in slot_ids]
     count_distribution = Counter(blob_counts)
@@ -187,12 +206,13 @@ def plot_blob_distribution(slots, slot_ids, date_start, date_end):
     ax.set_xticks(x_values)
     ax.grid(axis='y', linestyle='--', alpha=0.7)
     plt.tight_layout()
-    plt.savefig('blob_distribution.png', dpi=150)
+    output_path = os.path.join(results_dir, 'blob_distribution.png')
+    plt.savefig(output_path, dpi=150)
     plt.close()
-    print("Saved plot to blob_distribution.png")
+    print(f"Saved plot to {output_path}")
 
 
-def plot_miss_rate_by_blobs(slots, slot_ids, date_start, date_end):
+def plot_miss_rate_by_blobs(slots, slot_ids, date_start, date_end, results_dir):
     """Create a bar plot showing miss rate percentage after X blobs."""
     total_with_x = Counter()
     missed_after_x = Counter()
@@ -215,29 +235,31 @@ def plot_miss_rate_by_blobs(slots, slot_ids, date_start, date_end):
     ax.set_xticks(x_values)
     ax.grid(axis='y', linestyle='--', alpha=0.7)
     plt.tight_layout()
-    plt.savefig('miss_rate_by_blobs.png', dpi=150)
+    output_path = os.path.join(results_dir, 'miss_rate_by_blobs.png')
+    plt.savefig(output_path, dpi=150)
     plt.close()
-    print("Saved plot to miss_rate_by_blobs.png")
+    print(f"Saved plot to {output_path}")
 
 
-def write_random_slots(slots, slot_ids, num_samples=100, filepath="random_slots.csv"):
+def write_random_slots(slots, slot_ids, results_dir, num_samples=100):
     """Write random slots to a CSV file for verification."""
     import random
 
     sample_size = min(num_samples, len(slot_ids))
     random_slot_ids = random.sample(slot_ids, sample_size)
 
-    with open(filepath, 'w', newline='') as f:
+    output_path = os.path.join(results_dir, 'random_slots.csv')
+    with open(output_path, 'w', newline='') as f:
         writer = csv.writer(f)
         writer.writerow(['slot_id', 'count', 'missed'])
         for slot_id in sorted(random_slot_ids):
             data = slots[slot_id]
             writer.writerow([slot_id, data['count'], data['missed']])
 
-    print(f"Saved {sample_size} random slots to {filepath}")
+    print(f"Saved {sample_size} random slots to {output_path}")
 
 
-def write_high_blob_slots(slots, slot_ids, min_blobs=16, filepath="high_blob_slots.csv"):
+def write_high_blob_slots(slots, slot_ids, results_dir, min_blobs=16, figure_ranges=None):
     """Write slots with min_blobs or more blobs and their consecutive slot to a CSV file."""
     high_blob_entries = []
 
@@ -263,7 +285,8 @@ def write_high_blob_slots(slots, slot_ids, min_blobs=16, filepath="high_blob_slo
 
             high_blob_entries.append(entry)
 
-    with open(filepath, 'w', newline='') as f:
+    csv_path = os.path.join(results_dir, 'high_blob_slots.csv')
+    with open(csv_path, 'w', newline='') as f:
         writer = csv.writer(f)
         writer.writerow(['slot_id', 'blob_count', 'missed', 'next_slot_id', 'next_blob_count', 'next_missed'])
         for entry in high_blob_entries:
@@ -276,29 +299,55 @@ def write_high_blob_slots(slots, slot_ids, min_blobs=16, filepath="high_blob_slo
                 entry['next_missed'],
             ])
 
-    # Group by blob count for statistics
+    # Group by blob count for statistics (using ALL slots, not just high blob ones)
     stats_by_count = {}
-    for entry in high_blob_entries:
-        count = entry['blob_count']
-        if count not in stats_by_count:
-            stats_by_count[count] = {'total': 0, 'missed': 0}
-        stats_by_count[count]['total'] += 1
-        if entry['next_missed']:
-            stats_by_count[count]['missed'] += 1
+    for slot_id in slot_ids:
+        blob_count = slots[slot_id]['count']
+        if blob_count not in stats_by_count:
+            stats_by_count[blob_count] = {'total': 0, 'missed': 0}
+        stats_by_count[blob_count]['total'] += 1
+        # Check if next slot is missed
+        next_slot_id = slot_id + 1
+        if next_slot_id in slots and slots[next_slot_id]['missed']:
+            stats_by_count[blob_count]['missed'] += 1
 
-    print(f"Saved {len(high_blob_entries)} slots with {min_blobs}+ blobs to {filepath}")
-    print(f"  Consecutive missed slots by blob count:")
-    for count in sorted(stats_by_count.keys()):
-        total = stats_by_count[count]['total']
-        missed = stats_by_count[count]['missed']
-        ratio = (missed / total * 100) if total > 0 else 0
-        print(f"    {count} blobs: {missed}/{total} ({ratio:.2f}%)")
+    print(f"Saved {len(high_blob_entries)} slots with {min_blobs}+ blobs to {csv_path}")
+
+    # Write missed slot by blob count to markdown file
+    md_filepath = os.path.join(results_dir, 'missedSlotByBlobCount.md')
+    with open(md_filepath, 'w') as f:
+        f.write("# Blob Analysis Report\n\n")
+
+        # Write figure slot ranges if provided
+        if figure_ranges:
+            f.write("## Data Ranges Used per Figure\n\n")
+            f.write("| Figure | First Slot | Last Slot | First Date | Last Date |\n")
+            f.write("|--------|------------|-----------|------------|----------|\n")
+            for figure_name, (first_slot, last_slot) in figure_ranges.items():
+                first_date = slot_to_datetime(first_slot).strftime('%Y-%m-%d %H:%M:%S')
+                last_date = slot_to_datetime(last_slot).strftime('%Y-%m-%d %H:%M:%S')
+                f.write(f"| {figure_name} | {first_slot} | {last_slot} | {first_date} | {last_date} |\n")
+            f.write("\n")
+
+        f.write("## Consecutive Missed Slots by Blob Count\n\n")
+        f.write("| Blob Count | Total Slots | Missed Slots | Miss Rate (%) |\n")
+        f.write("|------------|-------------|--------------|---------------|\n")
+        for count in sorted(stats_by_count.keys()):
+            total = stats_by_count[count]['total']
+            missed = stats_by_count[count]['missed']
+            ratio = (missed / total * 100) if total > 0 else 0
+            f.write(f"| {count} | {total} | {missed} | {ratio:.2f} |\n")
+    print(f"Saved missed slot statistics to {md_filepath}")
 
 
 if __name__ == "__main__":
     import argparse
 
     parser = argparse.ArgumentParser(description='Analyze blob data per slot')
+    parser.add_argument('--data-dir', type=str, default='./data',
+                        help='Path to directory containing data files (default: ./data)')
+    parser.add_argument('--results-dir', type=str, default='./results',
+                        help='Path to directory for output files (default: ./results)')
     parser.add_argument('--days', '-d', type=int, default=None,
                         help='Number of days for box plot (default: all days)')
     parser.add_argument('--missed', '-m', type=int, default=None,
@@ -309,9 +358,29 @@ if __name__ == "__main__":
                         help='Minimum blob count for high blob slots export (default: 16)')
     args = parser.parse_args()
 
+    # Create results directory if it doesn't exist
+    os.makedirs(args.results_dir, exist_ok=True)
+
+    # Build file paths from data directory
+    blobs_file = os.path.join(args.data_dir, 'BlobsPerSlot.csv')
+    missed_file = os.path.join(args.data_dir, 'MissedSlots.csv')
+
+    # Check if data files exist
+    missing_files = []
+    if not os.path.isfile(blobs_file):
+        missing_files.append(blobs_file)
+    if not os.path.isfile(missed_file):
+        missing_files.append(missed_file)
+
+    if missing_files:
+        print(f"Error: Required data file(s) not found:", file=sys.stderr)
+        for f in missing_files:
+            print(f"  - {f}", file=sys.stderr)
+        sys.exit(1)
+
     # Load data
-    slots = load_blobs_per_slot()
-    slots = load_missed_slots(slots)
+    slots = load_blobs_per_slot(blobs_file)
+    slots = load_missed_slots(slots, missed_file)
     slot_ids = list(slots.keys())  # Already sorted from load_missed_slots
 
     print(f"Total unique slots: {len(slots)}")
@@ -333,18 +402,26 @@ if __name__ == "__main__":
 
     # Group by day and plot box plot
     days, missed_per_day = group_by_day(slots, slot_ids)
-    plot_blobs_per_day(days, missed_per_day, num_days=args.days)
+    boxplot_first, boxplot_last = plot_blobs_per_day(days, missed_per_day, slot_ids, args.results_dir, num_days=args.days)
 
     # Filter slots for missed analysis plots
     filtered_slot_ids, date_start, date_end = filter_slots_by_days(slot_ids, args.missed)
 
     # Generate remaining plots with pre-filtered data
-    plot_blobs_before_missed(slots, filtered_slot_ids, date_start, date_end)
-    plot_blob_distribution(slots, filtered_slot_ids, date_start, date_end)
-    plot_miss_rate_by_blobs(slots, filtered_slot_ids, date_start, date_end)
+    plot_blobs_before_missed(slots, filtered_slot_ids, date_start, date_end, args.results_dir)
+    plot_blob_distribution(slots, filtered_slot_ids, date_start, date_end, args.results_dir)
+    plot_miss_rate_by_blobs(slots, filtered_slot_ids, date_start, date_end, args.results_dir)
+
+    # Build figure ranges dictionary
+    figure_ranges = {
+        'blobs_per_day_boxplot.png': (boxplot_first, boxplot_last),
+        'blobs_before_missed.png': (filtered_slot_ids[0], filtered_slot_ids[-1]),
+        'blob_distribution.png': (filtered_slot_ids[0], filtered_slot_ids[-1]),
+        'miss_rate_by_blobs.png': (filtered_slot_ids[0], filtered_slot_ids[-1]),
+    }
 
     # Export random slots for verification
-    write_random_slots(slots, slot_ids, num_samples=args.random)
+    write_random_slots(slots, slot_ids, args.results_dir, num_samples=args.random)
 
     # Export high blob slots with their consecutive slots
-    write_high_blob_slots(slots, slot_ids, min_blobs=args.high_blobs)
+    write_high_blob_slots(slots, slot_ids, args.results_dir, min_blobs=args.high_blobs, figure_ranges=figure_ranges)
