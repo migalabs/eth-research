@@ -2,8 +2,11 @@
 data/
 
 # Generated outputs
+results/
 *.png
 random_slots.csv
+high_blob_slots.csv
+missedSlotByBlobCount.md
 
 # Python
 __pycache__/
