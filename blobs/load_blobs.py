@@ -27,7 +27,7 @@ def slot_to_datetime(slot):
 
 
 def load_blobs_per_slot(filepath):
-    """Load blob data and count occurrences per slot."""
+    """Load blob data and count occurrences per slot (one row per blob format)."""
     slots = {}
     with open(filepath, 'r') as f:
         reader = csv.DictReader(f)
@@ -36,6 +36,17 @@ def load_blobs_per_slot(filepath):
             if slot_id not in slots:
                 slots[slot_id] = {'count': 0, 'missed': False}
             slots[slot_id]['count'] += 1
+    return slots
+
+
+def load_blobs_per_slot_aggregated(filepath):
+    """Load blob data from pre-aggregated format (one row per slot with blob_count column)."""
+    slots = {}
+    with open(filepath, 'r') as f:
+        reader = csv.DictReader(f)
+        for row in reader:
+            slot_id = int(row['f_slot'])
+            slots[slot_id] = {'count': int(row['blob_count']), 'missed': False}
     return slots
 
 
@@ -356,6 +367,8 @@ if __name__ == "__main__":
                         help='Number of random slots to export for verification (default: 100)')
     parser.add_argument('--high-blobs', '-b', type=int, default=16,
                         help='Minimum blob count for high blob slots export (default: 16)')
+    parser.add_argument('--aggregated', '-a', action='store_true',
+                        help='Use pre-aggregated blob format (f_slot,blob_count) instead of one-row-per-blob format')
     args = parser.parse_args()
 
     # Create results directory if it doesn't exist
@@ -379,7 +392,10 @@ if __name__ == "__main__":
         sys.exit(1)
 
     # Load data
-    slots = load_blobs_per_slot(blobs_file)
+    if args.aggregated:
+        slots = load_blobs_per_slot_aggregated(blobs_file)
+    else:
+        slots = load_blobs_per_slot(blobs_file)
     slots = load_missed_slots(slots, missed_file)
     slot_ids = list(slots.keys())  # Already sorted from load_missed_slots
 
